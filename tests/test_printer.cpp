@@ -22,6 +22,7 @@ TEST(PrinterTest, ErrorState) {
     printer.setError("Paper Jam");
     EXPECT_EQ(printer.getState(), PrinterState::ERROR);
     EXPECT_EQ(printer.getLastError(), "Paper Jam");
+}
 
 // Test: Printing with no jobs should keep printer IDLE
 TEST(PrinterTest, NoJobsKeepsIdle) {
@@ -58,4 +59,4 @@ TEST(PrinterTest, MultipleJobsProcessed) {
     EXPECT_EQ(printer.getPaperCount(), initial - 2);
     EXPECT_EQ(printer.getState(), PrinterState::IDLE);
 }
-}
+
