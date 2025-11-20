@@ -8,6 +8,9 @@ void Printer::addJob(const std::string& job) {
 }
 
 void Printer::processJob() {
+    if (state == PrinterState::ERROR) {
+        return;
+    }
     if (paperCount <= 0) {
         state = PrinterState::OUT_OF_PAPER;
         return;
