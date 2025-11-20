@@ -1,0 +1,14 @@
+{
+  "name": "Jenkins CI/CD Dev Container",
+  "dockerFile": "Dockerfile",
+  "forwardPorts": [8080],
+  "postCreateCommand": "jenkins-plugin-cli --plugins git workflow-aggregator",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.cpptools",
+        "ms-vscode.cmake-tools"
+      ]
+    }
+  }
+}
