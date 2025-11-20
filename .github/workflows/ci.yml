@@ -42,7 +42,7 @@ jobs:
         tar -czf printer-firmware-demo.tar.gz build/printer
 
     - name: Upload artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: printer-firmware-demo
         path: printer-firmware-demo.tar.gz
