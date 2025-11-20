@@ -23,25 +23,4 @@ void Printer::processJob() {
     std::cout << "Printing: " << job << std::endl;
     state = PrinterState::IDLE;
 }
-
-// cppcheck-suppress unusedFunction
-void Printer::setError(const std::string& errorMsg) {
-    state = PrinterState::ERROR;
-    lastError = errorMsg;
-}
-
-// cppcheck-suppress unusedFunction
-void Printer::refillPaper(int sheets) {
-    paperCount += sheets;
-    if (state == PrinterState::OUT_OF_PAPER) state = PrinterState::IDLE;
-}
-
-// cppcheck-suppress unusedFunction
-PrinterState Printer::getState() const {
-    return state;
-}
-// cppcheck-suppress unusedFunction
-std::string Printer::getLastError() const {
-    return lastError;
-}
 int Printer::getPaperCount() const { return paperCount; }
