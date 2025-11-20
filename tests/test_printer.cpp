@@ -60,3 +60,57 @@ TEST(PrinterTest, MultipleJobsProcessed) {
     EXPECT_EQ(printer.getState(), PrinterState::IDLE);
 }
 
+// Test: Adding multiple jobs increases queue size
+TEST(PrinterTest, AddMultipleJobsIncreasesQueue) {
+    Printer printer;
+    printer.addJob("Job1");
+    printer.addJob("Job2");
+    printer.addJob("Job3");
+    int initial = printer.getPaperCount();
+    printer.processJob();
+    printer.processJob();
+    printer.processJob();
+    EXPECT_EQ(printer.getPaperCount(), initial - 3);
+}
+
+// Test: Processing job with no paper does not decrease paper count
+TEST(PrinterTest, NoPaperDoesNotPrint) {
+    Printer printer;
+    printer.refillPaper(-printer.getPaperCount()); // empty paper
+    printer.addJob("Job1");
+    int initial = printer.getPaperCount();
+    printer.processJob();
+    EXPECT_EQ(printer.getPaperCount(), initial);
+    EXPECT_EQ(printer.getState(), PrinterState::OUT_OF_PAPER);
+}
+
+// Test: Setting error prevents printing
+TEST(PrinterTest, ErrorPreventsPrinting) {
+    Printer printer;
+    printer.setError("Jam");
+    printer.addJob("Job1");
+    int initial = printer.getPaperCount();
+    printer.processJob();
+    EXPECT_EQ(printer.getPaperCount(), initial); // Should not print
+    EXPECT_EQ(printer.getState(), PrinterState::ERROR);
+}
+
+// Test: Refilling paper after out-of-paper allows printing
+TEST(PrinterTest, RefillAfterOutOfPaperAllowsPrint) {
+    Printer printer;
+    printer.refillPaper(-printer.getPaperCount()); // empty paper
+    printer.addJob("Job1");
+    printer.processJob();
+    EXPECT_EQ(printer.getState(), PrinterState::OUT_OF_PAPER);
+    printer.refillPaper(5);
+    printer.processJob();
+    EXPECT_EQ(printer.getState(), PrinterState::IDLE);
+    EXPECT_EQ(printer.getPaperCount(), 4);
+}
+
+// Test: getLastError returns empty string by default
+TEST(PrinterTest, DefaultLastErrorIsEmpty) {
+    Printer printer;
+    EXPECT_EQ(printer.getLastError(), "");
+}
+
