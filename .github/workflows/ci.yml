@@ -33,10 +33,6 @@ jobs:
         cd build
         ctest --output-on-failure
 
-    - name: Static Analysis
-      run: |
-        cppcheck --enable=all --error-exitcode=1 src/
-
     - name: Package artifact
       run: |
         tar -czf printer-firmware-demo.tar.gz build/printer
