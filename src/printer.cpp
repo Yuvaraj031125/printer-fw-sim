@@ -37,7 +37,11 @@ void Printer::refillPaper(int sheets) {
 }
 
 // cppcheck-suppress unusedFunction
-PrinterState Printer::getState() const { return state; }
+PrinterState Printer::getState() const {
+    return state;
+}
 // cppcheck-suppress unusedFunction
-std::string Printer::getLastError() const { return lastError; }
+std::string Printer::getLastError() const {
+    return lastError;
+}
 int Printer::getPaperCount() const { return paperCount; }
