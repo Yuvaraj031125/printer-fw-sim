@@ -2,7 +2,7 @@
   "name": "Jenkins CI/CD Dev Container",
   "dockerFile": "Dockerfile",
   "forwardPorts": [8080],
-  "postCreateCommand": "jenkins-plugin-cli --plugins git workflow-aggregator",
+  "postCreateCommand": "echo Jenkins container ready",
   "customizations": {
     "vscode": {
       "extensions": [

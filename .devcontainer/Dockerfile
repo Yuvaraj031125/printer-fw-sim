@@ -12,5 +12,6 @@ RUN apt-get update && apt-get install -y \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# Switch back to Jenkins user
-USER jenkins
+EXPOSE 8080
+
+CMD ["bash", "-c", "/usr/local/bin/jenkins.sh"]
