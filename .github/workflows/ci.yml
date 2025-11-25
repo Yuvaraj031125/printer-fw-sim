@@ -9,66 +9,50 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-
+    
     steps:
     - name: Checkout source
       uses: actions/checkout@v3
-
+    
     - name: Install dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y cmake g++ cppcheck libgtest-dev lcov
         cd /usr/src/gtest
-        sudo cmake .
+        sudo cmake CMakeLists.txt
         sudo make
         sudo cp lib/*.a /usr/lib
-
+    
     - name: Build
       run: |
-        cmake -S . -B build -DCMAKE_CXX_FLAGS="--coverage" -DCMAKE_C_FLAGS="--coverage"
-        cmake --build build
-
+        mkdir build
+        cd build
+        cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="--coverage" ..
+        make
+    
     - name: Run tests
       run: |
         cd build
         ctest --output-on-failure
-
+    
     - name: Package artifact
       run: |
-        tar -czf printer-firmware-demo.tar.gz build/printer
-
+        tar -czf printer-firmware.tar.gz -C build printer
+    
     - name: Collect coverage data
       run: |
-        lcov --capture --directory build --output-file coverage.info --ignore-errors mismatch
+        lcov --capture --directory build --output-file coverage.info
         lcov --remove coverage.info '/usr/*' --output-file coverage.info
         lcov --list coverage.info
-
+    
     - name: Upload coverage report
       uses: actions/upload-artifact@v4
       with:
         name: coverage-report
         path: coverage.info
-
-    - name: Build Docker image
-      run: docker build -t printer-fw-sim .
-
-    - name: Run tests in Docker container
-      run: docker run --rm printer-fw-sim
-
-    - name: Log in to Docker Hub
-      uses: docker/login-action@v3
-      with:
-        username: ${{ secrets.DOCKERHUB_USERNAME }}
-        password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-    - name: Tag Docker image
-      run: docker tag printer-fw-sim ${{ secrets.DOCKERHUB_USERNAME }}/printer-fw-sim:latest
-
-    - name: Push Docker image to Docker Hub
-      run: docker push ${{ secrets.DOCKERHUB_USERNAME }}/printer-fw-sim:latest
-
+    
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: printer-firmware-demo
-        path: printer-firmware-demo.tar.gz
+        name: printer-firmware
+        path: printer-firmware.tar.gz
