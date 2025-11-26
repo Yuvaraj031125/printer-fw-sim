@@ -1,7 +1,5 @@
 pipeline {
-    agent {
-        label 'ubuntu-latest'
-    }
+    agent any
     
     triggers {
         pollSCM('* * * * *')
@@ -17,12 +15,12 @@ pipeline {
         stage('Install Dependencies') {
             steps {
                 sh '''
-                    sudo apt-get update
-                    sudo apt-get install -y cmake g++ cppcheck libgtest-dev lcov
+                    apt-get update
+                    apt-get install -y cmake g++ cppcheck libgtest-dev lcov
                     cd /usr/src/gtest
-                    sudo cmake CMakeLists.txt
-                    sudo make
-                    sudo cp lib/*.a /usr/lib
+                    cmake CMakeLists.txt
+                    make
+                    cp lib/*.a /usr/lib
                 '''
             }
         }
@@ -72,7 +70,7 @@ pipeline {
         stage('Archive Artifacts') {
             steps {
                 dir('printer-fw-sim/printer-fw-sim') {
-                    archiveArtifacts artifacts: 'printer-firmware.tar.gz, coverage-report/**/*', allowEmptyArchive: true
+                    archiveArtifacts artifacts: 'printer-firmware.tar.gz, coverage-report/**/*', fingerprint: true
                 }
             }
         }
@@ -81,8 +79,8 @@ pipeline {
     post {
         always {
             script {
-                if (fileExists('printer-fw-sim/printer-fw-sim/build/**/*.xml')) {
-                    publishTestResults testResultsPattern: 'printer-fw-sim/printer-fw-sim/build/**/*.xml'
+                if (fileExists('**/build/**/*.xml')) {
+                    publishTestResults testResultsPattern: 'build/**/*.xml'
                 }
             }
             cleanWs()
