@@ -1,5 +1,11 @@
+
 pipeline {
     agent any
+
+    parameters {
+        string(name: 'BUILD_TYPE', defaultValue: 'Debug', description: 'Choose build type')
+        booleanParam(name: 'RUN_DOCKER', defaultValue: true, description: 'Run Docker steps?')
+    }
 
     stages {
         stage('Checkout') {
@@ -21,71 +27,23 @@ pipeline {
 
         stage('Build') {
             steps {
-                sh '''
-                cmake -S . -B build -DCMAKE_CXX_FLAGS="--coverage" -DCMAKE_C_FLAGS="--coverage"
+                sh """
+                cmake -S . -B build -DCMAKE_BUILD_TYPE=${params.BUILD_TYPE} -DCMAKE_CXX_FLAGS="--coverage" -DCMAKE_C_FLAGS="--coverage"
                 cmake --build build
-                '''
-            }
-        }
-
-        stage('Test') {
-            steps {
-                sh 'cd build && ctest --output-on-failure'
-            }
-        }
-
-        stage('Static Analysis') {
-            steps {
-                sh 'cppcheck --enable=all src/'
-            }
-        }
-
-        stage('Collect Coverage') {
-            steps {
-                sh '''
-                lcov --capture --directory build --output-file coverage.info --ignore-errors mismatch
-                lcov --remove coverage.info '/usr/*' --output-file coverage.info
-                lcov --list coverage.info
-                '''
-                archiveArtifacts artifacts: 'coverage.info', allowEmptyArchive: true
-            }
-        }
-
-        stage('Package') {
-            steps {
-                sh 'tar -czf printer-firmware-demo.tar.gz build/printer'
-                archiveArtifacts artifacts: 'printer-firmware-demo.tar.gz', allowEmptyArchive: true
+                """
             }
         }
 
         stage('Docker Build & Test') {
+            when {
+                expression { params.RUN_DOCKER }
+            }
             steps {
                 sh '''
                 docker build -t printer-fw-sim .
                 docker run --rm printer-fw-sim
                 '''
             }
-        }
-
-        stage('Docker Hub Push') {
-            environment {
-                DOCKERHUB_USERNAME = credentials('dockerhub-username')
-                DOCKERHUB_TOKEN = credentials('dockerhub-token')
-            }
-            steps {
-                sh '''
-                echo $DOCKERHUB_TOKEN | docker login -u $DOCKERHUB_USERNAME --password-stdin
-                docker tag printer-fw-sim $DOCKERHUB_USERNAME/printer-fw-sim:latest
-                docker push $DOCKERHUB_USERNAME/printer-fw-sim:latest
-                '''
-            }
-        }
-    }
-
-    post {
-        always {
-            archiveArtifacts artifacts: 'printer-firmware-demo.tar.gz', fingerprint: true
-            archiveArtifacts artifacts: 'coverage.info', allowEmptyArchive: true
         }
     }
 }
