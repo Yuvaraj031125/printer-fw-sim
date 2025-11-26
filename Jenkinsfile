@@ -2,11 +2,6 @@
 pipeline {
     agent any
 
-    parameters {
-        string(name: 'BUILD_TYPE', defaultValue: 'Debug', description: 'Choose build type')
-        booleanParam(name: 'RUN_DOCKER', defaultValue: true, description: 'Run Docker steps?')
-    }
-
     stages {
         stage('Checkout') {
             steps { checkout scm }
