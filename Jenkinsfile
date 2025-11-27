@@ -1,12 +1,9 @@
-
 pipeline {
-    agent {
-        docker { image 'ubuntu:24.04' }
-    }
+    agent any
     stages {
-        stage('Build') {
+        stage('Check Docker') {
             steps {
-                sh 'echo "Running inside Ubuntu container"'
+                sh 'docker --version && docker ps'
             }
         }
     }
