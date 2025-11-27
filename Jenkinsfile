@@ -12,8 +12,8 @@ pipeline {
         stage('Install Build Tools') {
             steps {
                 sh '''
-                    sudo apt-get update
-                    sudo apt-get install -y build-essential cmake g++
+                    apt-get update
+                    apt-get install -y build-essential cmake g++
                 '''
             }
         }
