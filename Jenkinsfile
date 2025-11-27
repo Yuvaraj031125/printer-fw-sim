@@ -1,12 +1,10 @@
-
 pipeline {
     agent any
-
     stages {
-        stage('Debug') {
+        stage('Hello') {
             steps {
-                echo "Pipeline started on ${env.NODE_NAME}"
-                sh 'ls -la'
+                echo 'Hello from Jenkins!'
+                sh 'echo Running shell command'
             }
         }
     }
