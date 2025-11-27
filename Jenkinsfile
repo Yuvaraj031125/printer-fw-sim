@@ -1,77 +1,84 @@
-
 pipeline {
     agent any
-
+       
     stages {
         stage('Checkout') {
             steps {
                 checkout scm
             }
         }
-
+        
         stage('Install Dependencies') {
             steps {
-                bat '''
-                    choco install cmake -y
-                    choco install mingw -y
-                    choco install cppcheck -y
-                    rem For GoogleTest, you may need to build manually or use vcpkg
+                sh '''
+                    apt-get update
+                    apt-get install -y cmake g++ cppcheck libgtest-dev lcov
+                    cd /usr/src/gtest
+                    cmake CMakeLists.txt
+                    make
+                    cp lib/*.a /usr/lib
                 '''
             }
         }
-
+        
         stage('Build') {
             steps {
-                dir('printer-fw-sim\\printer-fw-sim') {
-                    bat '''
-                        if not exist build mkdir build
+                dir('printer-fw-sim/printer-fw-sim') {
+                    sh '''
+                        mkdir -p build
                         cd build
-                        cmake -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Debug ..
-                        mingw32-make
+                        cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="--coverage" -DCMAKE_EXE_LINKER_FLAGS="--coverage" ..
+                        make
                     '''
                 }
             }
         }
-
+        
         stage('Run Tests') {
             steps {
-                dir('printer-fw-sim\\printer-fw-sim\\build') {
-                    bat 'ctest --output-on-failure'
+                dir('printer-fw-sim/printer-fw-sim/build') {
+                    sh 'ctest --output-on-failure'
                 }
             }
         }
-
+        
         stage('Package Artifact') {
             steps {
-                dir('printer-fw-sim\\printer-fw-sim') {
-                    bat 'tar -czf printer-firmware.tar.gz build\\printer'
+                dir('printer-fw-sim/printer-fw-sim') {
+                    sh 'tar -czf printer-firmware.tar.gz build/printer'
                 }
             }
         }
-
+        
         stage('Collect Coverage') {
             steps {
-                dir('printer-fw-sim\\printer-fw-sim') {
-                    bat '''
-                        rem Windows alternative: use gcovr for coverage
-                        pip install gcovr
-                        gcovr -r . --html --html-details -o coverage-report\\index.html
+                dir('printer-fw-sim/printer-fw-sim') {
+                    sh '''
+                        lcov --capture --directory build --output-file coverage.info
+                        lcov --remove coverage.info '/usr/*' --output-file coverage.info
+                        lcov --list coverage.info
+                        genhtml coverage.info --output-directory coverage-report
                     '''
                 }
             }
         }
-
+        
         stage('Archive Artifacts') {
             steps {
-                dir('printer-fw-sim\\printer-fw-sim') {
+                dir('printer-fw-sim/printer-fw-sim') {
                     archiveArtifacts artifacts: 'printer-firmware.tar.gz, coverage-report/**/*', fingerprint: true
                 }
             }
         }
     }
-
+    
     post {
         always {
+            script {
+                if (fileExists('**/build/**/*.xml')) {
+                    publishTestResults testResultsPattern: 'build/**/*.xml'
+                }
+            }
             cleanWs()
         }
     }
