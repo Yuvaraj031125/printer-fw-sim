@@ -1,6 +1,14 @@
-
 pipeline {
-    agent any   // Runs on any available Jenkins node
+    agent {
+        docker {
+            image 'ubuntu:24.04'   // Build inside Ubuntu container
+            args '-u root'         // Run as root for apt installs
+        }
+    }
+
+    environment {
+        DEBIAN_FRONTEND = 'noninteractive'
+    }
 
     stages {
         stage('Checkout') {
