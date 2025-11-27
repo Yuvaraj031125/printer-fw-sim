@@ -1,15 +1,6 @@
 
 pipeline {
-    agent {
-        docker {
-            image 'ubuntu:24.04'   // Use Ubuntu container
-            args '-u root'         // Run as root for apt installs
-        }
-    }
-
-    environment {
-        DEBIAN_FRONTEND = 'noninteractive'
-    }
+    agent any   // Runs on any available Jenkins node
 
     stages {
         stage('Checkout') {
@@ -18,11 +9,11 @@ pipeline {
             }
         }
 
-        stage('Install Dependencies') {
+        stage('Install Build Tools') {
             steps {
                 sh '''
-                    apt-get update
-                    apt-get install -y build-essential cmake g++ git
+                    sudo apt-get update
+                    sudo apt-get install -y build-essential cmake g++
                 '''
             }
         }
