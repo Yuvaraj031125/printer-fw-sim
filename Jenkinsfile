@@ -1,24 +1,27 @@
-
 pipeline {
     agent {
         docker {
-            image 'ubuntu:22.04'   // Use Ubuntu Docker image
-            args '-u root'         // Run as root for installing packages
+            image 'ubuntu:22.04'
+            args '-u root'
         }
     }
-
+    
+    triggers {
+        pollSCM('* * * * *')
+    }
+    
     environment {
         BUILD_DIR = 'build'
         ARTIFACT_NAME = 'printer-firmware.tar.gz'
     }
-
+    
     stages {
         stage('Checkout') {
             steps {
                 checkout scm
             }
         }
-
+        
         stage('Install Dependencies') {
             steps {
                 sh '''
@@ -31,18 +34,18 @@ pipeline {
                 '''
             }
         }
-
+        
         stage('Build') {
             steps {
                 sh '''
-                    mkdir ${BUILD_DIR}
+                    mkdir -p ${BUILD_DIR}
                     cd ${BUILD_DIR}
                     cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="--coverage" ..
                     make
                 '''
             }
         }
-
+        
         stage('Run Tests') {
             steps {
                 sh '''
@@ -51,26 +54,42 @@ pipeline {
                 '''
             }
         }
-
+        
         stage('Package Artifact') {
             steps {
                 sh '''
-                    cd ${BUILD_DIR}
-                    tar -czf ${ARTIFACT_NAME} printer
+                    tar -czf ${ARTIFACT_NAME} -C ${BUILD_DIR} printer
                 '''
             }
         }
-
-        stage('Archive Artifact') {
+        
+        stage('Collect Coverage') {
             steps {
-                archiveArtifacts artifacts: "${BUILD_DIR}/${ARTIFACT_NAME}", fingerprint: true
+                sh '''
+                    cd ${BUILD_DIR}
+                    lcov --capture --directory . --output-file coverage.info
+                    lcov --remove coverage.info '/usr/*' --output-file coverage.info
+                    lcov --list coverage.info
+                '''
+            }
+        }
+        
+        stage('Archive Artifacts') {
+            steps {
+                archiveArtifacts artifacts: "${ARTIFACT_NAME}, ${BUILD_DIR}/coverage.info", fingerprint: true
             }
         }
     }
-
+    
     post {
         always {
-            echo 'Pipeline finished.'
+            script {
+                if (fileExists("${BUILD_DIR}/**/*.xml")) {
+                    publishTestResults testResultsPattern: "${BUILD_DIR}/**/*.xml"
+                }
+            }
+            cleanWs()
+            echo "Pipeline finished."
         }
     }
 }
