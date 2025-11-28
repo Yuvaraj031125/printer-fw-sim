@@ -81,9 +81,11 @@ pipeline {
     }
   }
 
+  
   post {
     always {
-      cleanWs()
+      // Deletes the current workspace on the agent
+      deleteDir()
     }
     success {
       echo '✅ Build, test, and packaging completed successfully (Docker agent).'
