@@ -81,17 +81,17 @@ pipeline {
     }
   }
 
-  
   post {
     always {
-      // Deletes the current workspace on the agent
-      deleteDir()
+      // Clean inside the container to avoid host permission issues
+      sh '''
+        set -eux
+        # Make sure everything is writable, then remove
+        chmod -R u+w . || true
+        rm -rf ./* .??* || true
+      '''
     }
-    success {
-      echo '✅ Build, test, and packaging completed successfully (Docker agent).'
-    }
-    failure {
-      echo '❌ Pipeline failed. Check console output.'
-    }
+    success { echo '✅ Build, test, and packaging completed successfully (Docker agent).' }
+    failure { echo '❌ Pipeline failed. Check console output.' }
   }
 }
