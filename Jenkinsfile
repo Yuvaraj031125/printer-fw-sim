@@ -1,19 +1,21 @@
-
 pipeline {
-  // Run on a Docker-capable agent node instead of using a controller-side docker agent
-  agent { label 'docker-node' }
+  agent {
+    docker {
+      image 'ubuntu:24.04'
+      args '-u root'
+      alwaysPull true
+    }
+  }
 
   options {
     skipDefaultCheckout(true)
     timestamps()
     buildDiscarder(logRotator(numToKeepStr: '20'))
-    // If you ever parallelize, consider: parallelsAlwaysFailFast()
   }
 
   stages {
     stage('Prepare Workspace') {
       steps {
-        // Requires Workspace Cleanup plugin
         cleanWs(deleteDirs: true, notFailBuild: true, disableDeferredWipeout: true)
       }
     }
@@ -25,109 +27,82 @@ pipeline {
       }
     }
 
-    stage('Install Dependencies (inside docker)') {
+    stage('Install Dependencies') {
       steps {
-        script {
-          def img = docker.image('ubuntu:24.04')
-          // Always pull to simulate `alwaysPull true`
-          img.pull()
-          img.inside('-u root') {
-            sh '''
-              set -eux
-              apt-get update
-              DEBIAN_FRONTEND=noninteractive apt-get install -y \
-                build-essential cmake g++ cppcheck libgtest-dev lcov pkg-config git
+        sh '''
+          set -eux
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            build-essential cmake g++ cppcheck libgtest-dev lcov pkg-config git
 
-              # Build GoogleTest libraries
-              if [ -d /usr/src/googletest/googletest ]; then
-                cd /usr/src/googletest/googletest
-                cmake -S . -B build
-                cmake --build build -j"$(nproc)"
-                cp build/lib/*.a /usr/lib
-              elif [ -d /usr/src/gtest ]; then
-                cd /usr/src/gtest
-                cmake CMakeLists.txt
-                make -j"$(nproc)"
-                cp lib/*.a /usr/lib
-              else
-                echo "GoogleTest sources not found; check libgtest-dev."
-                exit 1
-              fi
-            '''
-          }
-        }
+          # Build GoogleTest libraries
+          if [ -d /usr/src/googletest/googletest ]; then
+            cd /usr/src/googletest/googletest
+            cmake -S . -B build
+            cmake --build build -j"$(nproc)"
+            cp build/lib/*.a /usr/lib
+          elif [ -d /usr/src/gtest ]; then
+            cd /usr/src/gtest
+            cmake CMakeLists.txt
+            make -j"$(nproc)"
+            cp lib/*.a /usr/lib
+          else
+            echo "GoogleTest sources not found; check libgtest-dev."
+            exit 1
+          fi
+        '''
       }
     }
 
-    stage('Static Analysis (inside docker)') {
+    stage('Static Analysis') {
       steps {
-        script {
-          def img = docker.image('ubuntu:24.04')
-          img.inside('-u root') {
-            sh '''
-              set -eux
-              if [ -d src ]; then
-                cppcheck --enable=warning,style,performance --error-exitcode=1 src || {
-                  echo "cppcheck found issues"; exit 1;
-                }
-              else
-                echo "No src/ directory; skipping cppcheck."
-              fi
-            '''
-          }
-        }
+        sh '''
+          set -eux
+          if [ -d src ]; then
+            cppcheck --enable=warning,style,performance --error-exitcode=1 src || {
+              echo "cppcheck found issues"; exit 1;
+            }
+          else
+            echo "No src/ directory; skipping cppcheck."
+          fi
+        '''
       }
     }
 
-    stage('Build (inside docker)') {
+    stage('Build') {
       steps {
-        script {
-          def img = docker.image('ubuntu:24.04')
-          img.inside('-u root') {
-            sh '''
-              set -eux
-              mkdir -p build
-              cd build
-              cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="--coverage" ..
-              make -j"$(nproc)"
-            '''
-          }
-        }
+        sh '''
+          set -eux
+          mkdir -p build
+          cd build
+          cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="--coverage" ..
+          make -j"$(nproc)"
+        '''
       }
     }
 
-    stage('Run Tests (inside docker)') {
+    stage('Run Tests') {
       steps {
-        script {
-          def img = docker.image('ubuntu:24.04')
-          img.inside('-u root') {
-            sh '''
-              set -eux
-              cd build
-              ctest --output-on-failure
-            '''
-          }
-        }
+        sh '''
+          set -eux
+          cd build
+          ctest --output-on-failure
+        '''
       }
     }
 
-    stage('Package Artifact (inside docker)') {
+    stage('Package Artifact') {
       steps {
-        script {
-          def img = docker.image('ubuntu:24.04')
-          img.inside('-u root') {
-            sh '''
-              set -eux
-              cd build
-              if [ -x ./printer ]; then
-                tar -czf printer-firmware.tar.gz printer
-              else
-                echo "Executable 'printer' not found; packaging entire build directory."
-                tar -czf build-output.tar.gz .
-              fi
-            '''
-          }
-        }
+        sh '''
+          set -eux
+          cd build
+          if [ -x ./printer ]; then
+            tar -czf printer-firmware.tar.gz printer
+          else
+            echo "Executable 'printer' not found; packaging entire build directory."
+            tar -czf build-output.tar.gz .
+          fi
+        '''
       }
     }
 
@@ -150,14 +125,7 @@ pipeline {
 
   post {
     always {
-      // Guard against missing workspace context if agent setup fails early
-      script {
-        if (env.WORKSPACE) {
-          cleanWs(deleteDirs: true, notFailBuild: true, disableDeferredWipeout: true)
-        } else {
-          echo 'No workspace context available; skipping cleanWs.'
-        }
-      }
+      cleanWs(deleteDirs: true, notFailBuild: true, disableDeferredWipeout: true)
     }
     success {
       echo '✅ Build, test, and packaging completed successfully.'
