@@ -3,23 +3,14 @@ pipeline {
   agent {
     docker {
       image 'ubuntu:24.04'
-      // Run as root so apt-get + copying to /usr/lib works
       args '-u root'
-      // Optionally always pull to avoid stale images
       alwaysPull true
     }
   }
 
-  options {
-    timestamps()
-    ansiColor('xterm')
-  }
-
   stages {
-
     stage('Checkout source') {
       steps {
-        // Requires the job to be configured as "Pipeline script from SCM"
         checkout scm
       }
     }
@@ -30,9 +21,9 @@ pipeline {
           set -eux
           apt-get update
           DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            cmake g++ cppcheck libgtest-dev lcov build-essential
+            build-essential cmake g++ cppcheck libgtest-dev lcov pkg-config
 
-          # Build GoogleTest libraries from the installed sources
+          # Build GoogleTest libraries
           if [ -d /usr/src/googletest/googletest ]; then
             cd /usr/src/googletest/googletest
             cmake -S . -B build
@@ -44,7 +35,7 @@ pipeline {
             make -j"$(nproc)"
             cp lib/*.a /usr/lib
           else
-            echo "GoogleTest sources not found; check libgtest-dev install."
+            echo "GoogleTest sources not found; check libgtest-dev."
             exit 1
           fi
         '''
@@ -78,30 +69,27 @@ pipeline {
         sh '''
           set -eux
           cd build
-          # Adjust 'printer' binary name if your build outputs a different target
           tar -czf printer-firmware.tar.gz printer
         '''
       }
     }
 
-    stage('Upload artifact (archive)') {
+    stage('Upload artifact') {
       steps {
-        // Archive to Jenkins so you can download from the build page
         archiveArtifacts artifacts: 'build/printer-firmware.tar.gz', fingerprint: true
       }
     }
   }
 
   post {
+    always {
+      cleanWs()
+    }
     success {
       echo '✅ Build, test, and packaging completed successfully (Docker agent).'
     }
     failure {
-      echo '❌ Pipeline failed. Check console output and stages.'
-    }
-    always {
-      // Optional, cleans workspace after the run
-      cleanWs()
+      echo '❌ Pipeline failed. Check console output.'
     }
   }
 }
