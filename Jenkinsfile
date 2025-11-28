@@ -3,14 +3,11 @@ pipeline {
   agent {
     docker {
       image 'ubuntu:24.04'
-      // Prefer matching the Jenkins user uid:gid (commonly 1000:1000). Adjust if your Jenkins user differs.
-      // If unsure, start with 1000:1000; you can check in the Jenkins container with `id jenkins`.
-      args '-u 1000:1000'
+      args '-u root'
       alwaysPull true
     }
   }
 
-  // Disable the implicit "Declarative: Checkout SCM" that happens before stages.
   options {
     skipDefaultCheckout(true)
     timestamps()
@@ -18,26 +15,20 @@ pipeline {
   }
 
   stages {
-    stage('Pre-clean workspace (inside container)') {
+    stage('Prepare Workspace') {
       steps {
-        sh '''
-          set -eux
-          # Make existing files writable, then wipe. This prevents host-side permission failures.
-          chmod -R u+w . || true
-          # Remove everything in workspace (files and dotfiles), but keep the workspace directory itself.
-          rm -rf ./* .??* || true
-        '''
+        cleanWs(deleteDirs: true, notFailBuild: true, disableDeferredWipeout: true)
       }
     }
 
-    stage('Checkout source') {
+    stage('Unpack & Checkout') {
       steps {
-        // Now perform checkout; since workspace is clean, Git won't attempt its "wipe" and will clone cleanly.
         checkout scm
+        sh 'test -f CMakeLists.txt || { echo "Missing CMakeLists.txt"; exit 1; }'
       }
     }
 
-    stage('Install dependencies') {
+    stage('Install Dependencies') {
       steps {
         sh '''
           set -eux
@@ -64,6 +55,21 @@ pipeline {
       }
     }
 
+    stage('Static Analysis') {
+      steps {
+        sh '''
+          set -eux
+          if [ -d src ]; then
+            cppcheck --enable=warning,style,performance --error-exitcode=1 src || {
+              echo "cppcheck found issues"; exit 1;
+            }
+          else
+            echo "No src/ directory; skipping cppcheck."
+          fi
+        '''
+      }
+    }
+
     stage('Build') {
       steps {
         sh '''
@@ -76,7 +82,7 @@ pipeline {
       }
     }
 
-    stage('Run tests') {
+    stage('Run Tests') {
       steps {
         sh '''
           set -eux
@@ -86,7 +92,7 @@ pipeline {
       }
     }
 
-    stage('Package artifact') {
+    stage('Package Artifact') {
       steps {
         sh '''
           set -eux
@@ -94,21 +100,21 @@ pipeline {
           if [ -x ./printer ]; then
             tar -czf printer-firmware.tar.gz printer
           else
-            echo "Executable 'printer' not found; packaging entire build directory as fallback."
+            echo "Executable 'printer' not found; packaging entire build directory."
             tar -czf build-output.tar.gz .
           fi
         '''
       }
     }
 
-    stage('Upload artifact') {
+    stage('Archive Artifact') {
       steps {
         script {
-          def hasMain = fileExists('build/printer-firmware.tar.gz')
-          def hasFallback = fileExists('build/build-output.tar.gz')
-          if (hasMain) {
+          def mainArtifact = fileExists('build/printer-firmware.tar.gz')
+          def fallbackArtifact = fileExists('build/build-output.tar.gz')
+          if (mainArtifact) {
             archiveArtifacts artifacts: 'build/printer-firmware.tar.gz', fingerprint: true
-          } else if (hasFallback) {
+          } else if (fallbackArtifact) {
             archiveArtifacts artifacts: 'build/build-output.tar.gz', fingerprint: true
           } else {
             error('No artifact found to archive.')
@@ -120,15 +126,10 @@ pipeline {
 
   post {
     always {
-      // Clean inside the container to avoid host permission issues.
-      sh '''
-        set -eux
-        chmod -R u+w . || true
-        rm -rf ./* .??* || true
-      '''
+      cleanWs(deleteDirs: true, notFailBuild: true, disableDeferredWipeout: true)
     }
     success {
-      echo '✅ Build, test, and packaging completed successfully (Docker agent).'
+      echo '✅ Build, test, and packaging completed successfully.'
     }
     failure {
       echo '❌ Pipeline failed. Check console output.'
