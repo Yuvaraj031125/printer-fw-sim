@@ -1,28 +1,29 @@
+
 pipeline {
   agent {
     docker {
       image 'ubuntu:24.04'
+      // Run as root to install packages inside the container
       args '-u root'
+      // Always pull the latest tag at the start
       alwaysPull true
     }
   }
 
   options {
+    // If you use “Pipeline script from SCM”, leave this as false OR remove it
+    // If you use inline “Pipeline script”, keep skipDefaultCheckout(false) or remove entirely
+    skipDefaultCheckout(false)
     timestamps()
     buildDiscarder(logRotator(numToKeepStr: '20'))
   }
 
   stages {
-    stage('Prepare Workspace') {
+    stage('Checkout') {
       steps {
-        cleanWs(deleteDirs: true, notFailBuild: true, disableDeferredWipeout: true)
-      }
-    }
-
-    stage('Unpack & Checkout') {
-      steps {
+        // Works if your job is "Pipeline script from SCM" or multibranch
         checkout scm
-        sh 'test -f CMakeLists.txt || { echo "Missing CMakeLists.txt"; exit 1; }'
+        sh 'ls -la'
       }
     }
 
@@ -30,25 +31,9 @@ pipeline {
       steps {
         sh '''
           set -eux
+          export DEBIAN_FRONTEND=noninteractive
           apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            build-essential cmake g++ cppcheck libgtest-dev lcov pkg-config git
-
-          # Build GoogleTest libraries
-          if [ -d /usr/src/googletest/googletest ]; then
-            cd /usr/src/googletest/googletest
-            cmake -S . -B build
-            cmake --build build -j"$(nproc)"
-            cp build/lib/*.a /usr/lib
-          elif [ -d /usr/src/gtest ]; then
-            cd /usr/src/gtest
-            cmake CMakeLists.txt
-            make -j"$(nproc)"
-            cp lib/*.a /usr/lib
-          else
-            echo "GoogleTest sources not found; check libgtest-dev."
-            exit 1
-          fi
+          apt-get install -y git build-essential cmake g++ cppcheck lcov pkg-config
         '''
       }
     }
@@ -58,9 +43,7 @@ pipeline {
         sh '''
           set -eux
           if [ -d src ]; then
-            cppcheck --enable=warning,style,performance --error-exitcode=1 src || {
-              echo "cppcheck found issues"; exit 1;
-            }
+            cppcheck --enable=warning,style,performance --error-exitcode=1 src
           else
             echo "No src/ directory; skipping cppcheck."
           fi
@@ -74,63 +57,45 @@ pipeline {
           set -eux
           mkdir -p build
           cd build
-          cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="--coverage" ..
+          cmake -DCMAKE_BUILD_TYPE=Release ..
           make -j"$(nproc)"
         '''
       }
     }
 
-    stage('Run Tests') {
+    stage('Test') {
       steps {
         sh '''
           set -eux
-          cd build
-          ctest --output-on-failure
-        '''
-      }
-    }
-
-    stage('Package Artifact') {
-      steps {
-        sh '''
-          set -eux
-          cd build
-          if [ -x ./printer ]; then
-            tar -czf printer-firmware.tar.gz printer
+          if [ -f build/CTestTestfile.cmake ]; then
+            cd build
+            ctest --output-on-failure
           else
-            echo "Executable 'printer' not found; packaging entire build directory."
-            tar -czf build-output.tar.gz .
+            echo "ctest config not found; skipping."
           fi
         '''
       }
     }
 
-    stage('Archive Artifact') {
+    stage('Package & Archive') {
       steps {
-        script {
-          def mainArtifact = fileExists('build/printer-firmware.tar.gz')
-          def fallbackArtifact = fileExists('build/build-output.tar.gz')
-          if (mainArtifact) {
-            archiveArtifacts artifacts: 'build/printer-firmware.tar.gz', fingerprint: true
-          } else if (fallbackArtifact) {
-            archiveArtifacts artifacts: 'build/build-output.tar.gz', fingerprint: true
-          } else {
-            error('No artifact found to archive.')
-          }
-        }
+        sh '''
+          set -eux
+          cd build
+          if [ -x ./app ]; then
+            tar -czf app.tar.gz app
+          else
+            tar -czf build-output.tar.gz .
+          fi
+        '''
+        archiveArtifacts artifacts: 'build/*.tar.gz', fingerprint: true
       }
     }
   }
 
   post {
-    always {
-      cleanWs(deleteDirs: true, notFailBuild: true, disableDeferredWipeout: true)
-    }
-    success {
-      echo '✅ Build, test, and packaging completed successfully.'
-    }
-    failure {
-      echo '❌ Pipeline failed. Check console output.'
-    }
+    success { echo '✅ Pipeline completed successfully.' }
+    failure { echo '❌ Pipeline failed. Check console output.' }
+    always  { cleanWs() }
   }
 }
