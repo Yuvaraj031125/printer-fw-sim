@@ -28,9 +28,9 @@ pipeline {
                     apt-get update
                     apt-get install -y cmake g++ cppcheck libgtest-dev lcov
                     cd /usr/src/gtest
-                    cmake CMakeLists.txt
+                    cmake .
                     make
-                    cp lib/*.a /usr/lib
+                    cp lib/*.a /usr/lib/
                 '''
             }
         }
@@ -76,7 +76,7 @@ pipeline {
         
         stage('Archive Artifacts') {
             steps {
-                archiveArtifacts artifacts: "${ARTIFACT_NAME}, ${BUILD_DIR}/coverage*.info", allowEmptyArchive: true
+                archiveArtifacts artifacts: "${ARTIFACT_NAME}, ${BUILD_DIR}/coverage*.info", fingerprint: true
             }
         }
     }
