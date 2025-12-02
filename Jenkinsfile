@@ -68,15 +68,15 @@ pipeline {
                 sh '''
                     cd ${BUILD_DIR}
                     lcov --capture --directory . --output-file coverage.info
-                    lcov --remove coverage.info '/usr/*' --output-file coverage.info
-                    lcov --list coverage.info
+                    lcov --remove coverage.info '/usr/*' --output-file coverage_filtered.info
+                    lcov --list coverage_filtered.info
                 '''
             }
         }
         
         stage('Archive Artifacts') {
             steps {
-                archiveArtifacts artifacts: "${ARTIFACT_NAME}, ${BUILD_DIR}/coverage.info", fingerprint: true
+                archiveArtifacts artifacts: "${ARTIFACT_NAME}, ${BUILD_DIR}/coverage*.info", allowEmptyArchive: true
             }
         }
     }
@@ -89,7 +89,7 @@ pipeline {
                 }
             }
             cleanWs()
-            echo "Pipeline finished."
+            echo 'Pipeline finished.'
         }
     }
 }
