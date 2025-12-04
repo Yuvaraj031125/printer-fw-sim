@@ -1,48 +1,52 @@
 name: Printer Firmware CI
-
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
-
+    branches: [main]
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-    
     steps:
-    - name: Checkout source
-      uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v4
       
-    - name: Install dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y cmake g++ cppcheck libgtest-dev lcov
-        sudo mkdir -p /usr/src/googletest/build
-        cd /usr/src/googletest/build
-        sudo cmake -DCMAKE_CXX_STANDARD=17 -DCMAKE_BUILD_TYPE=Release ..
-        sudo cmake --build . --config Release
-        sudo cp ./lib/libgtest*.a /usr/lib/
-        
-    - name: Build
-      run: |
-        mkdir -p build
-        cd build
-        cmake -DCMAKE_CXX_FLAGS="--coverage" ..
-        make
-        
-    - name: Run tests
-      run: |
-        cd build
-        ctest --output-on-failure
-        
-    - name: Package artifact
-      run: |
-        cd build
-        tar -cvf printer.tar printer
-        
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: printer-firmware
-        path: build/printer.tar
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake g++ cppcheck lcov ninja-build
+      
+      - name: Setup GoogleTest
+        run: |
+          git clone --depth 1 --branch v1.14.0 https://github.com/google/googletest.git third_party/googletest
+          cmake -S third_party/googletest -B third_party/gbuild -G Ninja \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+                -DCMAKE_INSTALL_PREFIX="${GITHUB_WORKSPACE}/third_party/ginstall"
+          cmake --build third_party/gbuild --target install
+      
+      - name: Configure CMake
+        run: |
+          cmake -S . -B build -G Ninja \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_CXX_FLAGS="--coverage" \
+                -DCMAKE_EXE_LINKER_FLAGS="--coverage" \
+                -DCMAKE_PREFIX_PATH="${GITHUB_WORKSPACE}/third_party/ginstall"
+      
+      - name: Build
+        run: |
+          cmake --build build -- -j$(nproc)
+      
+      - name: Test
+        run: |
+          ctest --test-dir build --output-on-failure
+      
+      - name: Package artifact
+        run: |
+          tar -cvf build/printer-fw-sim.tar -C build printer-fw-sim
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: printer-fw-sim
+          path: build/printer-fw-sim.tar
