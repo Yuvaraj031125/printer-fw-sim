@@ -20,8 +20,8 @@ jobs:
         sudo apt-get install -y cmake g++ cppcheck libgtest-dev lcov
         sudo mkdir -p /usr/src/googletest/build
         cd /usr/src/googletest/build
-        cmake -DCMAKE_CXX_STANDARD=17 -DCMAKE_BUILD_TYPE=Release ..
-        cmake --build . --config Release
+        sudo cmake -DCMAKE_CXX_STANDARD=17 -DCMAKE_BUILD_TYPE=Release ..
+        sudo cmake --build . --config Release
         sudo cp ./lib/libgtest*.a /usr/lib/
         
     - name: Build
