@@ -34,18 +34,19 @@ jobs:
                 -DCMAKE_PREFIX_PATH="${GITHUB_WORKSPACE}/third_party/ginstall"
       
       - name: Build
-        run: |
-          cmake --build build -- -j$(nproc)
+        run: cmake --build build -- -j$(nproc)
       
       - name: Test
-        run: |
-          ctest --test-dir build --output-on-failure
+        run: ctest --test-dir build --output-on-failure
       
       - name: Package artifact
         run: |
-          tar -cvf build/printer-fw-sim.tar -C build printer-fw-sim
+          if [ -f build/printer-fw-sim ]; then
+            tar -cvf build/printer-fw-sim.tar -C build printer-fw-sim
+          fi
       
       - name: Upload artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: printer-fw-sim
