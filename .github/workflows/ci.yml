@@ -1,4 +1,4 @@
-name: Printer Firmware CI
+name: CI Workflow
 on:
   push:
     branches: [main]
@@ -13,25 +13,27 @@ jobs:
       
       - name: Install C++ dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake g++ cppcheck lcov ninja-build
+          sudo apt-get update && sudo apt-get install -y cmake g++ cppcheck lcov ninja-build
       
       - name: Setup GoogleTest
         run: |
           git clone --depth 1 --branch v1.14.0 https://github.com/google/googletest.git third_party/googletest
           cmake -S third_party/googletest -B third_party/gbuild -G Ninja \
-                -DCMAKE_BUILD_TYPE=Release \
-                -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
-                -DCMAKE_INSTALL_PREFIX="${GITHUB_WORKSPACE}/third_party/ginstall"
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+            -DCMAKE_INSTALL_PREFIX="${GITHUB_WORKSPACE}/third_party/ginstall"
           cmake --build third_party/gbuild --target install
       
       - name: Configure CMake
         run: |
           cmake -S . -B build -G Ninja \
-                -DCMAKE_BUILD_TYPE=Release \
-                -DCMAKE_CXX_FLAGS="--coverage" \
-                -DCMAKE_EXE_LINKER_FLAGS="--coverage" \
-                -DCMAKE_PREFIX_PATH="${GITHUB_WORKSPACE}/third_party/ginstall"
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_FLAGS="--coverage" \
+            -DCMAKE_EXE_LINKER_FLAGS="--coverage" \
+            -DCMAKE_PREFIX_PATH="${GITHUB_WORKSPACE}/third_party/ginstall" \
+            -DCMAKE_RUNTIME_OUTPUT_DIRECTORY="${GITHUB_WORKSPACE}/build/bin" \
+            -DCMAKE_LIBRARY_OUTPUT_DIRECTORY="${GITHUB_WORKSPACE}/build/lib" \
+            -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY="${GITHUB_WORKSPACE}/build/lib"
       
       - name: Build
         run: |
@@ -41,12 +43,39 @@ jobs:
         run: |
           ctest --test-dir build --output-on-failure
       
-      - name: Package artifact
+      - name: Install (optional)
         run: |
-          tar -cvf build/printer-fw-sim.tar -C build printer-fw-sim
+          cmake --build build --target install || echo "No install target"
+      
+      - name: Discover artifacts
+        run: |
+          set -eux
+          artifact=""
+          if [ -d build/bin ]; then
+            artifact=$(find build/bin -type f -perm -111 | head -n 1 || true)
+          fi
+          if [ -z "${artifact}" ]; then
+            artifact=$(find build -type f \( \
+              -perm -111 -o \
+              -name "*.jar" -o -name "*.so" -o -name "*.dylib" -o -name "*.dll" -o \
+              -name "*.a" -o -name "*.whl" -o -name "*.tar.gz" -o -name "*.zip" \
+            \) | head -n 1 || true)
+          fi
+          echo "ARTIFACT_PATH=${artifact}" >> $GITHUB_ENV
+      
+      - name: Package artifact
+        if: env.ARTIFACT_PATH != ''
+        run: |
+          set -eux
+          mkdir -p out
+          base="$(basename "${ARTIFACT_PATH}")"
+          dir="$(dirname "${ARTIFACT_PATH}")"
+          tar -cvf "out/${base}.tar" -C "${dir}" "${base}"
+          echo "TAR_PATH=out/${base}.tar" >> $GITHUB_ENV
       
       - name: Upload artifact
+        if: env.TAR_PATH != ''
         uses: actions/upload-artifact@v4
         with:
-          name: printer-fw-sim
-          path: build/printer-fw-sim.tar
+          name: printer-fw-sim-${{ github.run_id }}
+          path: ${{ env.TAR_PATH }}
