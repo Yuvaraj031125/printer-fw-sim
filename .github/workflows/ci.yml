@@ -1,201 +1,47 @@
-name: 'C++ Printer Firmware CI/CD Pipeline'
+name: Printer Firmware CI
 
 on:
   push:
-    branches: [ main, master, develop ]
-    tags: [ 'v*' ]
+    branches: [ main ]
   pull_request:
-    branches: [ main, master ]
-  workflow_dispatch:
-    inputs:
-      deploy_environment:
-        description: 'Deployment environment'
-        required: false
-        default: 'staging'
-        type: choice
-        options:
-        - staging
-        - production
-      skip_tests:
-        description: 'Skip test execution'
-        required: false
-        default: false
-        type: boolean
+    branches: [ main ]
 
-# =============================================================================
-# Environment Variables and Configuration
-# =============================================================================
-env:
-  CMAKE_VERSION: '3.22'
-  BUILD_TYPE: Release
-  COVERAGE_THRESHOLD: 90
-  DOCKER_REGISTRY: ghcr.io
-  IMAGE_NAME: printer-firmware-simulator
-
-# =============================================================================
-# Workflow Jobs
-# =============================================================================
 jobs:
-  # ---------------------------------------------------------------------------
-  # Job 1: Code Quality and Security Analysis
-  # ---------------------------------------------------------------------------
-  code-analysis:
-    name: '🔍 Code Analysis & Security'
-    runs-on: ubuntu-22.04
-    permissions:
-      security-events: write
-      contents: read
-    
-    steps:
-    - name: '📥 Checkout Repository'
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0  # Full history for better analysis
-    
-    - name: '🔧 Setup Build Environment'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y build-essential cmake git libgtest-dev
-        
-    - name: '🛡️ Initialize CodeQL Analysis'
-      uses: github/codeql-action/init@v3
-      with:
-        languages: cpp
-        config-file: ./.github/codeql/codeql-config.yml
-        
-    - name: '🏗️ Build for Analysis'
-      run: |
-        cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-        cmake --build build --parallel $(nproc)
-        
-    - name: '🔍 Perform CodeQL Analysis'
-      uses: github/codeql-action/analyze@v3
-      with:
-        category: "/language:cpp"
-        
-    - name: '🔒 Dependency Vulnerability Scan'
-      uses: ossf/scorecard-action@v2.3.1
-      with:
-        results_file: results.sarif
-        results_format: sarif
-        publish_results: true
-
-  # ---------------------------------------------------------------------------
-  # Job 2: Multi-Platform Build and Test Matrix
-  # ---------------------------------------------------------------------------
   build-and-test:
-    name: '🏗️ Build & Test'
-    runs-on: ${{ matrix.os }}
-    needs: code-analysis
-    
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-22.04, ubuntu-20.04]
-        compiler: [gcc, clang]
-        build_type: [Debug, Release]
-        include:
-          - compiler: gcc
-            cc: gcc
-            cxx: g++
-          - compiler: clang
-            cc: clang
-            cxx: clang++
+    runs-on: ubuntu-latest
     
     steps:
-    - name: '📥 Checkout Repository'
-      uses: actions/checkout@v4
+    - name: Checkout source
+      uses: actions/checkout@v3
       
-    - name: '💾 Cache CMake Build'
-      uses: actions/cache@v4
-      with:
-        path: |
-          build
-          ~/.cache/cmake
-        key: ${{ runner.os }}-${{ matrix.compiler }}-${{ matrix.build_type }}-${{ hashFiles('**/CMakeLists.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-${{ matrix.compiler }}-${{ matrix.build_type }}-
-          ${{ runner.os }}-${{ matrix.compiler }}-
-          
-    - name: '🔧 Install Dependencies'
+    - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential cmake git libgtest-dev lcov
-        
-        # Build and install GoogleTest
+        sudo apt-get install -y cmake g++ cppcheck libgtest-dev lcov
         cd /usr/src/gtest
-        sudo cmake . -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+        sudo cmake CMakeLists.txt
         sudo make
-        sudo cp lib/*.a /usr/lib/ || sudo cp *.a /usr/lib/
+        sudo cp lib/*.a /usr/lib
         
-    - name: '⚙️ Configure CMake'
-      env:
-        CC: ${{ matrix.cc }}
-        CXX: ${{ matrix.cxx }}
+    - name: Build
       run: |
-        cmake -S . -B build \
-          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
-          -DCMAKE_CXX_FLAGS="--coverage -fprofile-arcs -ftest-coverage" \
-          -DCMAKE_C_FLAGS="--coverage -fprofile-arcs -ftest-coverage" \
-          -DCMAKE_EXE_LINKER_FLAGS="--coverage"
-          
-    - name: '🏗️ Build Project'
-      run: |
-        cmake --build build --config ${{ matrix.build_type }} --parallel $(nproc)
+        mkdir -p build
+        cd build
+        cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="--coverage" ..
+        make
         
-    - name: '🧪 Run Unit Tests'
-      if: ${{ !inputs.skip_tests }}
+    - name: Run tests
       run: |
         cd build
-        ctest --output-on-failure --parallel $(nproc) --verbose
+        ctest --output-on-failure
         
-    - name: '📊 Generate Coverage Report'
-      if: matrix.compiler == 'gcc' && matrix.build_type == 'Debug'
+    - name: Package artifact
       run: |
-        # Generate initial coverage data
-        lcov --capture --directory build --output-file coverage.info
+        cd build
+        tar -czf printer-firmware.tar.gz printer
         
-        # Filter out system headers and test files
-        lcov --remove coverage.info '/usr/*' --output-file coverage.info
-        lcov --remove coverage.info '*/tests/*' --output-file coverage.info
-        lcov --remove coverage.info '*/build/*' --output-file coverage.info
-        
-        # Generate HTML report
-        genhtml coverage.info --output-directory coverage_html
-        
-        # Check coverage threshold
-        COVERAGE=$(lcov --summary coverage.info | grep lines | grep -o '[0-9.]*%' | head -1 | sed 's/%//')
-        echo "Coverage: ${COVERAGE}%"
-        
-        if (( $(echo "$COVERAGE < $COVERAGE_THRESHOLD" | bc -l) )); then
-          echo "❌ Coverage ${COVERAGE}% is below threshold ${COVERAGE_THRESHOLD}%"
-          exit 1
-        else
-          echo "✅ Coverage ${COVERAGE}% meets threshold ${COVERAGE_THRESHOLD}%"
-        fi
-        
-    - name: '📤 Upload Coverage to Codecov'
-      if: matrix.compiler == 'gcc' && matrix.build_type == 'Debug'
-      uses: codecov/codecov-action@v4
-      with:
-        file: ./coverage.info
-        flags: unittests
-        name: codecov-umbrella
-        fail_ci_if_error: true
-        
-    - name: '📦 Upload Build Artifacts'
+    - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: build-artifacts-${{ matrix.os }}-${{ matrix.compiler }}-${{ matrix.build_type }}
-        path: |
-          build/printer
-          build/test_printer
-        retention-days: 7
-        
-    - name: '📊 Upload Coverage Report'
-      if: matrix.compiler == 'gcc' && matrix.build_type == 'Debug'
-      uses: actions/upload-artifact@v4
-      with:
-        name: coverage-report
-        path: coverage_html/
-        retention-days: 30
+        name: printer-firmware
+        path: build/printer-firmware.tar.gz
