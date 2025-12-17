@@ -1,74 +1,135 @@
-# Printer Firmware CI Workflow
-# Purpose: Automates build, test, and artifact packaging for printer firmware simulation.
-# This workflow builds the C++ printer firmware simulator, runs comprehensive unit tests,
-# generates code coverage reports, and packages the firmware binary for distribution.
-#
-# Configuration Instructions:
-# - Ensure the repository contains CMakeLists.txt in the root directory
-# - Source files should be in src/ directory (main.cpp, printer.cpp, printer.h)
-# - Test files should be in tests/ directory (test_printer.cpp)
-# - The workflow expects GoogleTest framework for unit testing
-# - Coverage reports are generated using lcov and gcov
-#
-# Troubleshooting Guide:
-# - If build fails: Check cmake version (minimum 3.10), verify C++17 compiler support
-# - If dependencies fail: Ensure Ubuntu package repositories are accessible
-# - If tests fail: Review ctest output for specific test failures, check GoogleTest installation
-# - If coverage fails: Verify gcov is available and source files have coverage flags
-# - If artifact upload fails: Confirm 'build/printer' executable exists after successful build
-# - If gtest build fails: Check /usr/src/gtest directory permissions and cmake availability
-#
-# Configuration Template (uncomment and modify as needed):
-# env:
-#   CMAKE_BUILD_TYPE: Debug
-#   FIRMWARE_BINARY_PATH: build/printer
-#   COVERAGE_OUTPUT_DIR: build/coverage
-#   ARTIFACT_NAME: printer-firmware
-#   GTEST_COLOR: 1
-
-name: Printer Firmware CI
+name: Printer Firmware Simulator CI/CD Pipeline
 
 on:
   push:
-    branches: [main]
+    branches: [ main, develop ]
+    tags: [ 'v*' ]
   pull_request:
-    branches: [main]
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+env:
+  # Build configuration
+  BUILD_TYPE: Release
+  CMAKE_VERSION: 3.10
+  # Docker configuration
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build-and-test:
+  # Static Analysis and Linting
+  static-analysis:
+    name: Static Analysis
     runs-on: ubuntu-latest
-    
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v3
-        
-      - name: Install dependencies
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install static analysis tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake g++ libgtest-dev lcov
-          cd /usr/src/gtest
-          sudo cmake .
-          sudo make
-          sudo cp lib/*.a /usr/lib
-          
-      - name: Build with coverage
+          sudo apt-get install -y cppcheck clang-format
+
+      - name: Run cppcheck
         run: |
-          mkdir -p build
-          cd build
-          cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="--coverage" ..
-          make
-          
+          cppcheck --enable=all --std=c++17 --error-exitcode=1 \
+            --suppress=missingIncludeSystem \
+            --suppress=unusedFunction \
+            src/ tests/
+
+      - name: Check code formatting
+        run: |
+          find src tests -name "*.cpp" -o -name "*.h" | xargs clang-format --dry-run --Werror
+
+  # Build and Test Matrix
+  build-and-test:
+    name: Build and Test
+    needs: static-analysis
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-20.04, windows-latest, macos-latest]
+        build_type: [Debug, Release]
+        include:
+          - os: ubuntu-latest
+            install_deps: |
+              sudo apt-get update
+              sudo apt-get install -y build-essential cmake git libgtest-dev
+              cd /usr/src/gtest && sudo cmake . && sudo make && sudo cp lib/*.a /usr/lib
+          - os: ubuntu-20.04
+            install_deps: |
+              sudo apt-get update
+              sudo apt-get install -y build-essential cmake git libgtest-dev
+              cd /usr/src/gtest && sudo cmake . && sudo make && sudo cp lib/*.a /usr/lib
+          - os: windows-latest
+            install_deps: |
+              vcpkg install gtest:x64-windows
+          - os: macos-latest
+            install_deps: |
+              brew install googletest cmake
+
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: '3.20'
+
+      - name: Install dependencies
+        run: ${{ matrix.install_deps }}
+
+      - name: Configure CMake (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DCMAKE_CXX_FLAGS="-Wall -Wextra -Werror"
+
+      - name: Configure CMake (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} `
+            -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+
+      - name: Build project
+        run: cmake --build build --config ${{ matrix.build_type }}
+
       - name: Run tests
+        working-directory: build
+        run: ctest --output-on-failure --build-config ${{ matrix.build_type }}
+
+      - name: Generate test coverage (Ubuntu Debug only)
+        if: matrix.os == 'ubuntu-latest' && matrix.build_type == 'Debug'
         run: |
-          cd build
-          ctest --output-on-failure
-          
-      - name: Package firmware artifact
-        run: |
-          tar -cvf printer-firmware.tar build/printer
-          
-      - name: Upload artifact
+          sudo apt-get install -y gcov lcov
+          cmake -S . -B build-coverage \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_FLAGS="--coverage -g -O0"
+          cmake --build build-coverage
+          cd build-coverage && ctest
+          lcov --capture --directory . --output-file coverage.info
+          lcov --remove coverage.info '/usr/*' '*/tests/*' --output-file coverage_filtered.info
+          genhtml coverage_filtered.info --output-directory coverage_html
+
+      - name: Upload coverage reports
+        if: matrix.os == 'ubuntu-latest' && matrix.build_type == 'Debug'
         uses: actions/upload-artifact@v4
         with:
-          name: printer-firmware
-          path: printer-firmware.tar
+          name: coverage-report
+          path: build-coverage/coverage_html/
+
+      - name: Upload build artifacts
+        if: matrix.build_type == 'Release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: printer-fw-sim-${{ matrix.os }}-${{ matrix.build_type }}
+          path: |
+            build/printer*
+            !build/**/*.o
+            !build/**/*.obj
