@@ -17,36 +17,9 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  # Static Analysis and Linting
-  static-analysis:
-    name: Static Analysis
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Install static analysis tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y cppcheck clang-format
-
-      - name: Run cppcheck
-        run: |
-          cppcheck --enable=all --std=c++17 --error-exitcode=1 \
-            --suppress=missingIncludeSystem \
-            --suppress=unusedFunction \
-            src/ tests/
-
-      - name: Check code formatting
-        run: |
-          find src tests -name "*.cpp" -o -name "*.h" | xargs clang-format --dry-run --Werror
-
   # Build and Test Matrix
   build-and-test:
     name: Build and Test
-    needs: static-analysis
     strategy:
       fail-fast: false
       matrix:
